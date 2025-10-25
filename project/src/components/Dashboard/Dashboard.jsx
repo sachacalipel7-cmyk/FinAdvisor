@@ -1,65 +1,36 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../contexts/AuthContext';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend, LineChart, Line, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { useMemo } from 'react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import { useFinancialData } from '../../contexts/FinancialDataContext';
 
 const COLORS = ['#0073e6', '#00a551', '#4da6ff', '#1ab568', '#80c0ff', '#80d6ab'];
 
 export default function Dashboard() {
-  const { user } = useAuth();
-  const [accounts, setAccounts] = useState([]);
-  const [income, setIncome] = useState([]);
-  const [expenses, setExpenses] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { accounts, expenses, metrics, isHydrated, isFetching } = useFinancialData();
 
-  useEffect(() => {
-    fetchData();
-  }, [user]);
+  const accountsData = useMemo(
+    () =>
+      accounts.map((acc) => ({
+        name: acc.account_name,
+        value: parseFloat(acc.balance || 0),
+      })),
+    [accounts]
+  );
 
-  const fetchData = async () => {
-    try {
-      const [accountsRes, incomeRes, expensesRes] = await Promise.all([
-        supabase.from('accounts').select('*').eq('user_id', user.id),
-        supabase.from('income').select('*').eq('user_id', user.id),
-        supabase.from('expenses').select('*').eq('user_id', user.id),
-      ]);
-
-      setAccounts(accountsRes.data || []);
-      setIncome(incomeRes.data || []);
-      setExpenses(expensesRes.data || []);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const totalBalance = accounts.reduce((sum, acc) => sum + parseFloat(acc.balance || 0), 0);
-  const monthlyIncome = income
-    .filter((i) => i.frequency === 'monthly')
-    .reduce((sum, i) => sum + parseFloat(i.amount || 0), 0);
-  const monthlyExpenses = expenses
-    .filter((e) => e.frequency === 'monthly')
-    .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-
-  const accountsData = accounts.map((acc) => ({
-    name: acc.account_name,
-    value: parseFloat(acc.balance || 0),
-  }));
-
-  const expensesData = expenses
-    .filter((e) => e.frequency === 'monthly')
-    .reduce((acc, e) => {
-      const existing = acc.find((item) => item.name === e.category);
-      if (existing) {
-        existing.value += parseFloat(e.amount || 0);
-      } else {
-        acc.push({ name: e.category, value: parseFloat(e.amount || 0) });
+  const expensesData = useMemo(() => {
+    const monthlyExpenses = expenses.filter((e) => e.frequency === 'monthly');
+    const aggregation = monthlyExpenses.reduce((acc, expense) => {
+      const key = expense.category;
+      if (!acc[key]) {
+        acc[key] = 0;
       }
+      acc[key] += Number(expense.amount || 0);
       return acc;
-    }, []);
+    }, {});
 
-  if (loading) {
+    return Object.entries(aggregation).map(([name, value]) => ({ name, value }));
+  }, [expenses]);
+
+  if (!isHydrated && isFetching) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-gray-600">Chargement...</div>
@@ -82,7 +53,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Patrimoine total</p>
-              <p className="text-2xl font-bold text-gray-900">{totalBalance.toFixed(2)} €</p>
+              <p className="text-2xl font-bold text-gray-900">{metrics.totalBalance.toFixed(2)} €</p>
             </div>
           </div>
         </div>
@@ -94,7 +65,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Revenus mensuels</p>
-              <p className="text-2xl font-bold text-success-700">{monthlyIncome.toFixed(2)} €</p>
+              <p className="text-2xl font-bold text-success-700">{metrics.monthlyIncome.toFixed(2)} €</p>
             </div>
           </div>
         </div>
@@ -106,7 +77,7 @@ export default function Dashboard() {
             </div>
             <div>
               <p className="text-sm text-gray-600">Dépenses mensuelles</p>
-              <p className="text-2xl font-bold text-red-700">{monthlyExpenses.toFixed(2)} €</p>
+              <p className="text-2xl font-bold text-red-700">{metrics.monthlyExpenses.toFixed(2)} €</p>
             </div>
           </div>
         </div>
@@ -177,14 +148,14 @@ export default function Dashboard() {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-gray-600">Capacité d'épargne</p>
-            <p className={`text-3xl font-bold ${monthlyIncome - monthlyExpenses >= 0 ? 'text-success-700' : 'text-red-700'}`}>
-              {(monthlyIncome - monthlyExpenses).toFixed(2)} €
+            <p className={`text-3xl font-bold ${metrics.monthlySavings >= 0 ? 'text-success-700' : 'text-red-700'}`}>
+              {metrics.monthlySavings.toFixed(2)} €
             </p>
           </div>
           <div className="text-right">
             <p className="text-sm text-gray-600">Taux d'épargne</p>
-            <p className={`text-3xl font-bold ${monthlyIncome > 0 ? 'text-primary-700' : 'text-gray-700'}`}>
-              {monthlyIncome > 0 ? ((monthlyIncome - monthlyExpenses) / monthlyIncome * 100).toFixed(1) : '0'}%
+            <p className={`text-3xl font-bold ${metrics.monthlyIncome > 0 ? 'text-primary-700' : 'text-gray-700'}`}>
+              {metrics.monthlyIncome > 0 ? ((metrics.monthlySavings / metrics.monthlyIncome) * 100).toFixed(1) : '0'}%
             </p>
           </div>
         </div>

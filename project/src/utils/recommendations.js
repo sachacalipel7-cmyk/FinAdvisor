@@ -1,16 +1,29 @@
-export const generateRecommendations = (profile, accounts, income, expenses) => {
+export const generateRecommendations = (profile, metricsOrAccounts, income = [], expenses = []) => {
   if (!profile || !profile.risk_tolerance || !profile.investment_horizon) {
     return null;
   }
 
-  const totalBalance = accounts.reduce((sum, acc) => sum + parseFloat(acc.balance || 0), 0);
-  const monthlyIncome = income
-    .filter((i) => i.frequency === 'monthly')
-    .reduce((sum, i) => sum + parseFloat(i.amount || 0), 0);
-  const monthlyExpenses = expenses
-    .filter((e) => e.frequency === 'monthly')
-    .reduce((sum, e) => sum + parseFloat(e.amount || 0), 0);
-  const monthlySavings = monthlyIncome - monthlyExpenses;
+  let totalBalance = 0;
+  let monthlyIncome = 0;
+  let monthlyExpenses = 0;
+  let monthlySavings = 0;
+
+  if (Array.isArray(metricsOrAccounts)) {
+    totalBalance = metricsOrAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance || 0), 0);
+    monthlyIncome = income
+      .filter((item) => item.frequency === 'monthly')
+      .reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+    monthlyExpenses = expenses
+      .filter((item) => item.frequency === 'monthly')
+      .reduce((sum, item) => sum + parseFloat(item.amount || 0), 0);
+    monthlySavings = monthlyIncome - monthlyExpenses;
+  } else {
+    const metrics = metricsOrAccounts || {};
+    totalBalance = Number(metrics.totalBalance || 0);
+    monthlyIncome = Number(metrics.monthlyIncome || 0);
+    monthlyExpenses = Number(metrics.monthlyExpenses || 0);
+    monthlySavings = 'monthlySavings' in metrics ? Number(metrics.monthlySavings || 0) : monthlyIncome - monthlyExpenses;
+  }
 
   const recommendations = {
     risk_profile: profile.risk_tolerance,
