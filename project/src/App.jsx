@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { FinancialDataProvider } from './contexts/FinancialDataContext';
 import Login from './components/Auth/Login';
 import Register from './components/Auth/Register';
 import Sidebar from './components/Layout/Sidebar';
@@ -51,14 +52,16 @@ function AppContent() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
-      <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-7xl mx-auto p-8">
-          {renderPage()}
-        </div>
-      </main>
-    </div>
+    <FinancialDataProvider>
+      <div className="flex h-screen bg-gray-50">
+        <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
+        <main className="flex-1 overflow-y-auto">
+          <div className="max-w-7xl mx-auto p-8">
+            {renderPage()}
+          </div>
+        </main>
+      </div>
+    </FinancialDataProvider>
   );
 }
 
