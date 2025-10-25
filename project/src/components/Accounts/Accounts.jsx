@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../../lib/supabase';
-import { useAuth } from '../../contexts/AuthContext';
+import { useMemo, useState } from 'react';
+import { useFinancialData } from '../../contexts/FinancialDataContext';
 
 const accountTypes = [
   { value: 'current', label: 'Compte courant', icon: '🏦' },
@@ -12,61 +11,44 @@ const accountTypes = [
 ];
 
 export default function Accounts() {
-  const { user } = useAuth();
-  const [accounts, setAccounts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    accounts,
+    metrics,
+    isFetching,
+    isHydrated,
+    createAccount,
+    deleteAccount,
+  } = useFinancialData();
   const [showForm, setShowForm] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const [formData, setFormData] = useState({
     account_type: 'current',
     account_name: '',
     balance: '',
   });
 
-  useEffect(() => {
-    fetchAccounts();
-  }, [user]);
+  const hasData = accounts.length > 0;
 
-  const fetchAccounts = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('accounts')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+  const totalBalance = useMemo(() => metrics.totalBalance, [metrics.totalBalance]);
 
-      if (error) throw error;
-      setAccounts(data || []);
-    } catch (error) {
-      console.error('Error fetching accounts:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setIsSubmitting(true);
 
     try {
-      const { error } = await supabase.from('accounts').insert([
-        {
-          user_id: user.id,
-          account_type: formData.account_type,
-          account_name: formData.account_name,
-          balance: parseFloat(formData.balance),
-        },
-      ]);
-
-      if (error) throw error;
-
+      await createAccount({
+        account_type: formData.account_type,
+        account_name: formData.account_name,
+        balance: formData.balance,
+      });
       setFormData({ account_type: 'current', account_name: '', balance: '' });
       setShowForm(false);
-      fetchAccounts();
     } catch (error) {
       console.error('Error creating account:', error);
       alert('Erreur lors de la création du compte');
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -74,23 +56,19 @@ export default function Accounts() {
     if (!confirm('Voulez-vous vraiment supprimer ce compte ?')) return;
 
     try {
-      const { error } = await supabase.from('accounts').delete().eq('id', id);
-
-      if (error) throw error;
-      fetchAccounts();
+      setDeletingId(id);
+      await deleteAccount(id);
     } catch (error) {
       console.error('Error deleting account:', error);
       alert('Erreur lors de la suppression du compte');
+    } finally {
+      setDeletingId(null);
     }
   };
 
-  const getAccountIcon = (type) => {
-    return accountTypes.find((t) => t.value === type)?.icon || '📊';
-  };
+  const getAccountIcon = (type) => accountTypes.find((t) => t.value === type)?.icon || '📊';
 
-  const totalBalance = accounts.reduce((sum, acc) => sum + parseFloat(acc.balance || 0), 0);
-
-  if (loading && accounts.length === 0) {
+  if (!isHydrated && isFetching) {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-gray-600">Chargement...</div>
@@ -130,9 +108,7 @@ export default function Accounts() {
           <h3 className="text-xl font-semibold text-gray-900 mb-4">Nouveau compte</h3>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Type de compte
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Type de compte</label>
               <select
                 value={formData.account_type}
                 onChange={(e) => setFormData({ ...formData, account_type: e.target.value })}
@@ -147,9 +123,7 @@ export default function Accounts() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nom du compte
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nom du compte</label>
               <input
                 type="text"
                 value={formData.account_name}
@@ -161,9 +135,7 @@ export default function Accounts() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Solde actuel (€)
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Solde actuel (€)</label>
               <input
                 type="number"
                 step="0.01"
@@ -177,12 +149,18 @@ export default function Accounts() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={isSubmitting}
               className="w-full bg-primary-600 text-white py-2 rounded hover:bg-primary-700 transition disabled:opacity-50"
             >
-              {loading ? 'Ajout...' : 'Ajouter le compte'}
+              {isSubmitting ? 'Ajout...' : 'Ajouter le compte'}
             </button>
           </form>
+        </div>
+      )}
+
+      {isFetching && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded">
+          Actualisation des données en cours...
         </div>
       )}
 
@@ -203,9 +181,10 @@ export default function Accounts() {
               </div>
               <button
                 onClick={() => handleDelete(account.id)}
-                className="text-red-600 hover:text-red-700 text-sm"
+                disabled={deletingId === account.id}
+                className="text-red-600 hover:text-red-700 text-sm disabled:opacity-50"
               >
-                ✕
+                {deletingId === account.id ? '...' : '✕'}
               </button>
             </div>
             <div>
@@ -216,7 +195,7 @@ export default function Accounts() {
         ))}
       </div>
 
-      {accounts.length === 0 && !showForm && (
+      {!hasData && !showForm && (
         <div className="text-center py-12 bg-white rounded-lg border border-gray-200">
           <p className="text-gray-500">Aucun compte ajouté pour le moment</p>
           <p className="text-gray-400 text-sm mt-1">Cliquez sur "Ajouter un compte" pour commencer</p>
